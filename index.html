@@ -1,0 +1,876 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>TerraMap</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0D0D0D">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="icon" href="icon-512.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --canvas: #0D0D0D;
+    --ink: #EDE7DC;
+    --muted: #837C72;
+    --accent: #D6D4CE;
+    --core: #FAF9F6;
+    --warm: #D6D4CE;
+    --mid: #8C8A84;
+    --cold: #4A4946;
+    --line: rgba(237,231,220,.09);
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; margin: 0; overscroll-behavior: none; }
+  body {
+    background: var(--canvas); color: var(--ink);
+    font-family: "Atkinson Hyperlegible", system-ui, -apple-system, sans-serif;
+    display: flex; flex-direction: column; font-size: 16px;
+  }
+
+  header {
+    flex: none; display: flex; align-items: center; gap: 8px;
+    padding: calc(env(safe-area-inset-top) + 12px) 16px 12px;
+    border-bottom: 1px solid var(--line); background: var(--canvas);
+  }
+  .title { font-weight: 700; font-size: 18px; color: var(--accent);
+           overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .iconbtn { background: none; border: none; color: var(--accent);
+             font: inherit; font-size: 22px; line-height: 1; padding: 0 4px; }
+  .spacer { margin-left: auto; }
+  .pill { background: none; border: 1px solid var(--line); color: var(--muted);
+          font: inherit; font-size: 12px; padding: 5px 10px; border-radius: 999px; }
+
+  #tabs { flex: none; display: flex; gap: 8px; padding: 10px 16px 0; }
+  #tabs button { background: none; border: 1px solid var(--line); color: var(--muted);
+                 font: inherit; font-size: 12px; padding: 5px 12px; border-radius: 999px; }
+  #tabs button.on { border-color: var(--accent); color: var(--accent); }
+
+  #acts { display: none; gap: 8px; padding: 10px 16px; flex-wrap: wrap;
+          background: #1C1C1A; border-bottom: 1px solid var(--line); }
+  #acts.show { display: flex; }
+  #acts button { background: none; border: 1px solid var(--line); color: var(--ink);
+                 font: inherit; font-size: 13px; padding: 7px 12px; border-radius: 8px; }
+  #acts button.danger { border-color: #C46A6A; color: #E89999; }
+
+  #panel { display: none; flex: none; gap: 8px; padding: 10px 16px;
+           border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  #panel.open { display: flex; }
+  #panel button { background: none; border: 1px solid var(--line); color: var(--ink);
+                  font: inherit; font-size: 13px; padding: 7px 12px; border-radius: 8px; }
+  #panel .note { width: 100%; font-size: 11px; color: var(--muted); }
+
+  #hint { flex: none; font-size: 11px; color: var(--muted);
+          text-align: center; padding: 8px 14px 0; }
+
+  main { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 10px 0 20px; }
+
+  #grid { position: relative; margin: 0 auto; touch-action: pan-y; }
+  .sq { position: absolute; border-radius: 10px; padding: 7px 8px;
+        overflow: hidden; display: flex; flex-direction: column; }
+  .sq.warm { background: var(--warm); color: #26251F; }
+  .sq.mid  { background: var(--mid);  color: #1C1B18; }
+  .sq.cold { background: var(--cold); color: #C9C7C0; }
+  .sq.sel { outline: 2px solid var(--core); outline-offset: 2px; }
+  .sq.lift { opacity: .55; }
+  .sq-name { font-weight: 700; font-size: 13px; line-height: 1.15; }
+  .sq-sub { font-size: 11px; opacity: .75; margin-top: auto; }
+  .ghost { position: absolute; border-radius: 10px; border: 2px dashed var(--core);
+           opacity: .5; pointer-events: none; }
+
+  .plist { padding: 0 16px; }
+  .prow { padding: 14px 0; border-bottom: 1px solid var(--line);
+          display: flex; align-items: center; gap: 12px; }
+  .prow.sel { background: #1C1C1A; }
+  .pbody { flex: 1; min-width: 0; }
+  .pname { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .psub { font-size: 12px; color: var(--muted); margin-top: 3px; }
+  .thick { height: 10px; background: rgba(237,231,220,.10);
+           border-radius: 5px; margin-top: 8px; overflow: hidden; }
+  .thick > div { height: 100%; border-radius: 5px; background: var(--accent);
+                 transition: width .2s ease; }
+  .plus { flex: none; min-width: 46px; height: 38px; border-radius: 8px;
+          border: 1px solid var(--line); background: none; color: var(--core);
+          font: inherit; font-size: 14px; font-weight: 700; }
+
+  #dropup { display: none; position: fixed; left: 0; right: 0; z-index: 25;
+            bottom: calc(env(safe-area-inset-bottom) + 74px);
+            background: #1C1C1A; border-top: 1px solid var(--line);
+            border-bottom: 1px solid var(--line); padding: 12px 16px; }
+  #dropup.open { display: block; }
+  #dropup .who { font-size: 12px; color: var(--muted); margin-bottom: 10px; }
+  #dropup .opts { display: flex; gap: 8px; }
+  #dropup .opts button { flex: 1; background: none; border: 1px solid var(--line);
+                         color: var(--ink); font: inherit; font-size: 15px;
+                         font-weight: 700; padding: 13px 0; border-radius: 10px; }
+  #scrim { display: none; position: fixed; inset: 0; z-index: 24; background: rgba(0,0,0,.5); }
+  #scrim.open { display: block; }
+
+  .empty { margin: 46px auto; text-align: center; color: var(--muted);
+           font-size: 14px; max-width: 26ch; line-height: 1.5; padding: 0 20px; }
+  .empty b { color: var(--ink); display: block; margin-bottom: 4px; }
+
+  footer { flex: none; display: flex; align-items: flex-end; gap: 8px;
+           padding: 10px 12px calc(env(safe-area-inset-bottom) + 10px);
+           border-top: 1px solid var(--line); background: var(--canvas); }
+  textarea { flex: 1; resize: none; background: #171717; color: var(--ink);
+             border: 1px solid var(--line); border-radius: 18px; padding: 10px 14px;
+             font: inherit; line-height: 1.4; max-height: 30vh; min-height: 42px; }
+  textarea:focus { outline: none; border-color: var(--accent); }
+  #send { flex: none; width: 42px; height: 42px; border-radius: 50%; border: none;
+          background: var(--accent); color: #0D0D0D; font-size: 19px;
+          font-weight: 700; line-height: 1; }
+  #send:disabled { opacity: .35; }
+
+  .bar { display: none; font-size: 13px; padding: 9px 14px; text-align: center; }
+  .bar.show { display: block; }
+  #warn { background: #4A1F1F; color: #FFD9D9; font-size: 12px; }
+
+  #about { display: none; position: fixed; inset: 0; z-index: 20;
+           background: rgba(5,5,5,.94); padding: 28px 22px; overflow-y: auto; }
+  #about.open { display: block; }
+  #about h2 { color: var(--accent); font-size: 17px; margin: 0 0 4px; }
+  #about dl { margin: 0; }
+  #about dt { font-weight: 700; font-size: 14px; margin-top: 16px; }
+  #about dd { margin: 3px 0 0; font-size: 13px; color: var(--muted); line-height: 1.5; }
+  #about .close { margin-top: 26px; width: 100%; background: none; color: var(--ink);
+                  border: 1px solid var(--line); border-radius: 10px;
+                  font: inherit; font-size: 14px; padding: 11px; }
+</style>
+</head>
+<body>
+
+<header>
+  <button class="iconbtn" id="back" hidden>&#8592;</button>
+  <button class="iconbtn" id="cancelSel" hidden>&#10005;</button>
+  <span class="title" id="title">TerraMap</span>
+  <span class="spacer"></span>
+  <button class="pill" id="menuBtn">Data</button>
+</header>
+
+<div class="bar" id="warn"></div>
+
+<div id="acts">
+  <button id="aRename">Rename</button>
+  <button id="aSize">Size</button>
+  <button id="aMove">Move</button>
+  <button id="aTarget">Target</button>
+  <button id="aDelete" class="danger">Delete</button>
+</div>
+
+<div id="panel">
+  <button id="exportBtn">Export JSON</button>
+  <button id="copyBtn">Copy JSON</button>
+  <button id="importBtn">Import JSON</button>
+  <button id="aboutBtn">About</button>
+  <span class="note">Import merges by ID. Nothing is overwritten or replaced.</span>
+  <input type="file" id="file" accept="application/json,.json" hidden>
+</div>
+
+<div id="tabs">
+  <button id="tMap" class="on">Map</button>
+  <button id="tAll">All projects</button>
+</div>
+
+<div id="hint"></div>
+
+<main>
+  <div id="grid"></div>
+  <div id="plist" class="plist" hidden></div>
+</main>
+
+<footer>
+  <textarea id="box" rows="1" enterkeyhint="enter"></textarea>
+  <button id="send" disabled>&#8593;</button>
+</footer>
+
+<div id="scrim"></div>
+<div id="dropup">
+  <div class="who" id="dropWho"></div>
+  <div class="opts">
+    <button data-add="15">+15m</button>
+    <button data-add="30">+30m</button>
+    <button data-add="60">+1h</button>
+  </div>
+</div>
+
+<div id="about">
+  <h2>How TerraMap works</h2>
+  <dl>
+    <dt>The map</dt>
+    <dd>Each square is a domain — an area of your life. Size shows how much weight it carries right now; position shows what sits next to what. Type a name below and send to add one.</dd>
+    <dt>Temperature</dt>
+    <dd>Squares fade as they go untouched: light within two days, mid up to nine, dark beyond. Cold means room, not debt. Opening a domain warms it.</dd>
+    <dt>Editing the map</dt>
+    <dd>Long press a square to select it, then Rename, cycle its Size, Move it, or Delete. Move puts you in placing mode — tap an empty cell to drop it.</dd>
+    <dt>Projects</dt>
+    <dd>Tap a domain to open its projects. Give one an hour target and it gains a thick bar and a + button. Tap + and choose 15 minutes, 30 minutes or an hour — short sessions count. Long press + to reset the project to zero.</dd>
+    <dt>All projects</dt>
+    <dd>The second tab lists every project from every domain at once, so anything lagging shows up regardless of where it is filed.</dd>
+    <dt>Where the data lives</dt>
+    <dd>On this phone only. Nothing is uploaded. Export from time to time.</dd>
+  </dl>
+  <button class="close" id="closeAbout">Close</button>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var SCHEMA = 1;
+  var KEY = "terramap_data_v1";
+  var COLS = 5, ROWS = 12;
+
+  var gridEl = document.getElementById("grid");
+  var plistEl = document.getElementById("plist");
+  var titleEl = document.getElementById("title");
+  var backEl = document.getElementById("back");
+  var cancelSel = document.getElementById("cancelSel");
+  var hintEl = document.getElementById("hint");
+  var tabsEl = document.getElementById("tabs");
+  var actsEl = document.getElementById("acts");
+  var panel = document.getElementById("panel");
+  var warn = document.getElementById("warn");
+  var box = document.getElementById("box");
+  var send = document.getElementById("send");
+  var fileInput = document.getElementById("file");
+  var aboutEl = document.getElementById("about");
+  var aRename = document.getElementById("aRename");
+  var aSize = document.getElementById("aSize");
+  var aMove = document.getElementById("aMove");
+  var aTarget = document.getElementById("aTarget");
+  var aDelete = document.getElementById("aDelete");
+
+  var domains = [];
+  var view = "map";        // map | all | domain
+  var openId = null;
+  var sel = null;          // selected domain or project id
+  var moving = null;       // domain id being placed
+  var cellW = 0, cellH = 0, gut = 6;
+
+  /* ---------- storage ---------- */
+
+  function flash(m) { warn.textContent = m; warn.classList.add("show"); }
+
+  function load() {
+    var raw;
+    try { raw = localStorage.getItem(KEY); }
+    catch (e) { flash("Storage is blocked here. Nothing will persist."); return; }
+    if (!raw) return;
+    try {
+      var p = JSON.parse(raw);
+      domains = Array.isArray(p) ? p : (p.domains || []);
+    } catch (e) {
+      flash("Saved data could not be read. Nothing was deleted \u2014 export before adding more.");
+    }
+  }
+
+  function save() {
+    var payload = JSON.stringify({ schema: SCHEMA, app: "terramap", domains: domains });
+    try {
+      localStorage.setItem(KEY, payload);
+      if (localStorage.getItem(KEY) !== payload) throw new Error("verify");
+      warn.classList.remove("show");
+      return true;
+    } catch (e) {
+      flash("Could not save. Export now before changing anything else.");
+      return false;
+    }
+  }
+
+  function newId(p) {
+    return p + "-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 7);
+  }
+  function domById(id) {
+    for (var i = 0; i < domains.length; i++) if (domains[i].id === id) return domains[i];
+    return null;
+  }
+  function current() { return openId ? domById(openId) : null; }
+
+  /* ---------- geometry ---------- */
+
+  function occupied(skipId) {
+    var m = {};
+    domains.forEach(function (D) {
+      if (D.id === skipId) return;
+      for (var c = D.col; c < D.col + D.w; c++)
+        for (var r = D.row; r < D.row + D.h; r++) m[c + "," + r] = true;
+    });
+    return m;
+  }
+
+  function fits(col, row, w, h, skipId) {
+    if (col < 0 || row < 0 || col + w > COLS || row + h > ROWS) return false;
+    var m = occupied(skipId);
+    for (var c = col; c < col + w; c++)
+      for (var r = row; r < row + h; r++) if (m[c + "," + r]) return false;
+    return true;
+  }
+
+  function firstFree(w, h) {
+    for (var r = 0; r < ROWS; r++)
+      for (var c = 0; c < COLS; c++) if (fits(c, r, w, h)) return { col: c, row: r };
+    return null;
+  }
+
+  /* ---------- temperature ---------- */
+
+  function tempClass(ts) {
+    var d = (Date.now() - (ts || 0)) / 86400000;
+    if (d < 3) return "warm";
+    if (d < 10) return "mid";
+    return "cold";
+  }
+  function fmt(mins) {
+    mins = Math.round(mins || 0);
+    if (mins < 60) return mins + "m";
+    var h = Math.floor(mins / 60), m = mins % 60;
+    return m ? h + "h " + m + "m" : h + "h";
+  }
+
+  function ago(ts) {
+    if (!ts) return "never opened";
+    var d = Math.floor((Date.now() - ts) / 86400000);
+    if (d < 1) return "today";
+    if (d === 1) return "yesterday";
+    return d + "d ago";
+  }
+
+  /* ---------- render ---------- */
+
+  function render() {
+    var D = current();
+    var inDomain = view === "domain" && D;
+    if (view === "domain" && !D) view = "map";
+
+    backEl.hidden = !inDomain;
+    cancelSel.hidden = !sel && !moving;
+    tabsEl.hidden = inDomain;
+    gridEl.hidden = view !== "map";
+    plistEl.hidden = view === "map";
+    actsEl.classList.toggle("show", !!sel);
+    document.getElementById("tMap").className = view === "map" ? "on" : "";
+    document.getElementById("tAll").className = view === "all" ? "on" : "";
+
+    var onMap = view === "map";
+    aSize.hidden = !onMap; aMove.hidden = !onMap; aRename.hidden = false;
+    aTarget.hidden = onMap;
+
+    if (moving) {
+      hintEl.textContent = "Tap an empty cell to place it";
+      titleEl.textContent = "Moving";
+      renderGrid();
+      return;
+    }
+    if (sel) { hintEl.textContent = "\u2715 to cancel"; }
+
+    if (view === "map") {
+      titleEl.textContent = "TerraMap";
+      box.placeholder = "Name a new domain";
+      if (!sel) hintEl.textContent = domains.length ? "Long press a square to edit it" : "";
+      renderGrid();
+    } else if (view === "all") {
+      titleEl.textContent = "TerraMap";
+      box.placeholder = "Open a domain to add projects";
+      if (!sel) hintEl.textContent = "Every project, all domains";
+      renderAll();
+    } else {
+      titleEl.textContent = D.name;
+      box.placeholder = "Name a new project";
+      if (!sel) hintEl.textContent = D.projects.length ? "Long press a project to edit it" : "";
+      renderProjects(D);
+    }
+  }
+
+  function renderGrid() {
+    var w = Math.min(gridEl.parentNode.clientWidth - 24, 480);
+    cellW = (w - gut * (COLS - 1)) / COLS;
+    cellH = cellW;
+    gridEl.style.width = w + "px";
+
+    var maxRow = 2;
+    domains.forEach(function (D) { maxRow = Math.max(maxRow, D.row + D.h); });
+    gridEl.style.height = ((maxRow + 1) * (cellH + gut)) + "px";
+    gridEl.innerHTML = "";
+
+    if (!domains.length) {
+      var e = document.createElement("div");
+      e.className = "empty";
+      e.innerHTML = "<b>Empty territory</b>Type a domain name below and send to place your first square.";
+      gridEl.appendChild(e);
+      return;
+    }
+
+    domains.forEach(function (D) {
+      var el = document.createElement("div");
+      el.className = "sq " + tempClass(D.opened_at) +
+                     (sel === D.id ? " sel" : "") + (moving === D.id ? " lift" : "");
+      el.dataset.id = D.id;
+      el.style.left = (D.col * (cellW + gut)) + "px";
+      el.style.top = (D.row * (cellH + gut)) + "px";
+      el.style.width = (D.w * cellW + (D.w - 1) * gut) + "px";
+      el.style.height = (D.h * cellH + (D.h - 1) * gut) + "px";
+
+      var n = document.createElement("div");
+      n.className = "sq-name"; n.textContent = D.name;
+      el.appendChild(n);
+
+      if (D.w > 1 || D.h > 1) {
+        var s = document.createElement("div");
+        s.className = "sq-sub";
+        var np = D.projects.length;
+        s.textContent = (np ? np + " project" + (np === 1 ? "" : "s") + " \u00b7 " : "") + ago(D.opened_at);
+        el.appendChild(s);
+      }
+      gridEl.appendChild(el);
+    });
+
+    if (moving) {
+      var m = occupied(moving), mv = domById(moving);
+      for (var r = 0; r < ROWS; r++) {
+        for (var c = 0; c < COLS; c++) {
+          if (!fits(c, r, mv.w, mv.h, moving)) continue;
+          var g = document.createElement("div");
+          g.className = "ghost";
+          g.dataset.cell = c + "," + r;
+          g.style.left = (c * (cellW + gut)) + "px";
+          g.style.top = (r * (cellH + gut)) + "px";
+          g.style.width = (mv.w * cellW + (mv.w - 1) * gut) + "px";
+          g.style.height = (mv.h * cellH + (mv.h - 1) * gut) + "px";
+          g.style.pointerEvents = "auto";
+          gridEl.appendChild(g);
+        }
+      }
+      var mh = 0;
+      domains.forEach(function (D) { mh = Math.max(mh, D.row + D.h); });
+      gridEl.style.height = (Math.max(mh, ROWS) * (cellH + gut)) + "px";
+    }
+  }
+
+  function projectRow(P, D, showDomain) {
+    var row = document.createElement("div");
+    row.className = "prow" + (sel === P.id ? " sel" : "");
+    row.dataset.id = P.id;
+    row.dataset.dom = D.id;
+
+    var body = document.createElement("div");
+    body.className = "pbody";
+    var n = document.createElement("div");
+    n.className = "pname"; n.textContent = P.name;
+    body.appendChild(n);
+
+    var s = document.createElement("div");
+    s.className = "psub";
+    var line = P.target ? fmt(P.done) + " / " + fmt(P.target) : "no target";
+    if (showDomain) line = D.name + " \u00b7 " + line;
+    s.textContent = line;
+    body.appendChild(s);
+
+    if (P.target) {
+      var t = document.createElement("div"); t.className = "thick";
+      var f = document.createElement("div");
+      f.style.width = Math.min(100, Math.round(((P.done || 0) / P.target) * 100)) + "%";
+      t.appendChild(f); body.appendChild(t);
+    }
+
+    row.appendChild(body);
+    if (P.target) {
+      var plus = document.createElement("button");
+      plus.className = "plus"; plus.textContent = "+";
+      plus.dataset.plus = P.id;
+      row.appendChild(plus);
+    }
+    return row;
+  }
+
+  function renderProjects(D) {
+    plistEl.innerHTML = "";
+    if (!D.projects.length) {
+      var e = document.createElement("div");
+      e.className = "empty";
+      e.innerHTML = "<b>No projects here</b>Type a name below and send.";
+      plistEl.appendChild(e);
+      return;
+    }
+    D.projects.forEach(function (P) { plistEl.appendChild(projectRow(P, D, false)); });
+  }
+
+  function renderAll() {
+    plistEl.innerHTML = "";
+    var any = false;
+    domains.forEach(function (D) {
+      D.projects.forEach(function (P) {
+        any = true;
+        plistEl.appendChild(projectRow(P, D, true));
+      });
+    });
+    if (!any) {
+      var e = document.createElement("div");
+      e.className = "empty";
+      e.innerHTML = "<b>No projects yet</b>Open a domain on the map and add one.";
+      plistEl.appendChild(e);
+    }
+  }
+
+  /* ---------- capture ---------- */
+
+  function submit() {
+    var text = box.value.trim();
+    if (!text) return;
+
+    if (view === "map") {
+      var spot = firstFree(1, 1);
+      if (!spot) { alert("The map is full. Move or delete a square first."); return; }
+      domains.push({ id: newId("d"), name: text, col: spot.col, row: spot.row,
+                     w: 1, h: 1, opened_at: Date.now(), projects: [] });
+      if (!save()) { domains.pop(); return; }
+    } else if (view === "domain") {
+      var D = current();
+      if (!D) return;
+      D.projects.push({ id: newId("p"), name: text, done: 0, created_at: Date.now() });
+      if (!save()) { D.projects.pop(); return; }
+    } else { return; }
+
+    box.value = "";
+    autosize();
+    send.disabled = true;
+    render();
+  }
+
+  function autosize() {
+    box.style.height = "auto";
+    box.style.height = Math.min(box.scrollHeight, window.innerHeight * 0.3) + "px";
+  }
+
+  box.addEventListener("input", function () {
+    autosize();
+    send.disabled = !box.value.trim() || view === "all";
+  });
+  send.addEventListener("click", submit);
+
+  /* ---------- press handling ---------- */
+
+  var pressTimer = null, longFired = false;
+
+  function hit(ev) { return ev.target.closest(".sq, .prow"); }
+
+  function startPress(ev) {
+    if (ev.target.closest(".plus")) {
+      var pl = ev.target.closest(".plus");
+      longFired = false;
+      pressTimer = setTimeout(function () {
+        longFired = true;
+        if (navigator.vibrate) navigator.vibrate(12);
+        resetProject(pl.dataset.plus);
+      }, 450);
+      return;
+    }
+    var el = hit(ev);
+    if (!el || moving) return;
+    longFired = false;
+    pressTimer = setTimeout(function () {
+      longFired = true;
+      sel = el.dataset.id;
+      if (navigator.vibrate) navigator.vibrate(12);
+      render();
+    }, 450);
+  }
+  function endPress() { clearTimeout(pressTimer); }
+
+  document.addEventListener("touchstart", startPress, { passive: true });
+  document.addEventListener("mousedown", startPress);
+  ["touchend", "touchmove", "touchcancel", "mouseup", "mouseleave"].forEach(function (t) {
+    document.addEventListener(t, endPress, { passive: true });
+  });
+
+  document.addEventListener("click", function (ev) {
+    var pl = ev.target.closest(".plus");
+    if (pl) {
+      if (longFired) { longFired = false; return; }
+      openDrop(pl.dataset.plus);
+      return;
+    }
+
+    var gh = ev.target.closest(".ghost");
+    if (gh && moving) {
+      var parts = gh.dataset.cell.split(",");
+      var D = domById(moving);
+      D.col = parseInt(parts[0], 10); D.row = parseInt(parts[1], 10);
+      moving = null; sel = null;
+      save(); render();
+      return;
+    }
+
+    var el = hit(ev);
+    if (!el) return;
+    if (longFired) { longFired = false; return; }
+    if (sel) { sel = null; render(); return; }
+
+    if (el.classList.contains("sq")) {
+      var d = domById(el.dataset.id);
+      if (!d) return;
+      d.opened_at = Date.now();
+      save();
+      openId = d.id; view = "domain";
+      render();
+    }
+  });
+
+  document.addEventListener("contextmenu", function (ev) { if (hit(ev)) ev.preventDefault(); });
+
+  backEl.addEventListener("click", function () {
+    openId = null; sel = null; view = "map"; render();
+  });
+  cancelSel.addEventListener("click", function () { sel = null; moving = null; render(); });
+
+  /* ---------- actions ---------- */
+
+  var dropTarget = null;
+  var dropEl = document.getElementById("dropup");
+  var scrimEl = document.getElementById("scrim");
+
+  function findProject(id) {
+    for (var i = 0; i < domains.length; i++)
+      for (var j = 0; j < domains[i].projects.length; j++)
+        if (domains[i].projects[j].id === id) return domains[i].projects[j];
+    return null;
+  }
+
+  function openDrop(id) {
+    var P = findProject(id);
+    if (!P) return;
+    dropTarget = id;
+    document.getElementById("dropWho").textContent =
+      P.name + " \u00b7 " + fmt(P.done) + " of " + fmt(P.target);
+    dropEl.classList.add("open");
+    scrimEl.classList.add("open");
+  }
+
+  function closeDrop() {
+    dropTarget = null;
+    dropEl.classList.remove("open");
+    scrimEl.classList.remove("open");
+  }
+
+  scrimEl.addEventListener("click", closeDrop);
+  dropEl.addEventListener("click", function (ev) {
+    var b = ev.target.closest("[data-add]");
+    if (!b || !dropTarget) return;
+    bump(dropTarget, parseInt(b.dataset.add, 10));
+    closeDrop();
+  });
+
+  function resetProject(id) {
+    var P = findProject(id);
+    if (!P || !(P.done > 0)) return;
+    if (!confirm("Reset \"" + P.name + "\" from " + fmt(P.done) + " back to zero?")) return;
+    var prev = P.done;
+    P.done = 0;
+    if (!save()) { P.done = prev; return; }
+    render();
+  }
+
+  function bump(id, d) {
+    for (var i = 0; i < domains.length; i++) {
+      var ps = domains[i].projects;
+      for (var j = 0; j < ps.length; j++) {
+        if (ps[j].id !== id) continue;
+        var prev = ps[j].done || 0;
+        ps[j].done = Math.max(0, prev + d);
+        if (!save()) { ps[j].done = prev; return; }
+        render(); return;
+      }
+    }
+  }
+
+  function selectedProject() {
+    for (var i = 0; i < domains.length; i++)
+      for (var j = 0; j < domains[i].projects.length; j++)
+        if (domains[i].projects[j].id === sel) return { D: domains[i], P: domains[i].projects[j] };
+    return null;
+  }
+
+  aRename.addEventListener("click", function () {
+    var D = domById(sel), sp = D ? null : selectedProject();
+    var obj = D || (sp && sp.P);
+    if (!obj) return;
+    var v = window.prompt("Rename:", obj.name);
+    if (v === null) return;
+    v = v.trim(); if (!v) return;
+    obj.name = v; sel = null;
+    save(); render();
+  });
+
+  aSize.addEventListener("click", function () {
+    var D = domById(sel);
+    if (!D) return;
+    var order = [1, 2, 3];
+    var i = order.indexOf(D.w);
+    for (var k = 1; k <= 3; k++) {
+      var n = order[(i + k) % 3];
+      if (fits(D.col, D.row, n, n, D.id)) { D.w = n; D.h = n; sel = null; save(); render(); return; }
+    }
+    alert("No room to resize here. Move it first.");
+  });
+
+  aMove.addEventListener("click", function () {
+    if (!domById(sel)) return;
+    moving = sel; sel = null; render();
+  });
+
+  aTarget.addEventListener("click", function () {
+    var sp = selectedProject();
+    if (!sp) return;
+    var cur = sp.P.target ? Math.round(sp.P.target / 60) : "";
+    var v = window.prompt("Hours to commit to \"" + sp.P.name + "\" (blank to remove):", cur);
+    if (v === null) return;
+    v = v.trim();
+    if (!v) { delete sp.P.target; }
+    else {
+      var n = parseFloat(v);
+      if (!(n > 0)) { alert("Enter a number of hours."); return; }
+      sp.P.target = Math.round(n * 60);
+      if (typeof sp.P.done !== "number") sp.P.done = 0;
+    }
+    sel = null; save(); render();
+  });
+
+  aDelete.addEventListener("click", function () {
+    var D = domById(sel);
+    if (D) {
+      if (!confirm("Delete \"" + D.name + "\" and its " + D.projects.length + " project(s)?")) return;
+      domains = domains.filter(function (x) { return x.id !== sel; });
+      if (openId === sel) { openId = null; view = "map"; }
+    } else {
+      var sp = selectedProject();
+      if (!sp) return;
+      if (!confirm("Delete project \"" + sp.P.name + "\"?")) return;
+      sp.D.projects = sp.D.projects.filter(function (x) { return x.id !== sel; });
+    }
+    sel = null; save(); render();
+  });
+
+  /* ---------- tabs, panel, about ---------- */
+
+  document.getElementById("tMap").addEventListener("click", function () {
+    view = "map"; openId = null; sel = null; send.disabled = !box.value.trim(); render();
+  });
+  document.getElementById("tAll").addEventListener("click", function () {
+    view = "all"; openId = null; sel = null; send.disabled = true; render();
+  });
+  document.getElementById("menuBtn").addEventListener("click", function () {
+    panel.classList.toggle("open");
+  });
+  document.getElementById("aboutBtn").addEventListener("click", function () {
+    aboutEl.classList.add("open");
+  });
+  document.getElementById("closeAbout").addEventListener("click", function () {
+    aboutEl.classList.remove("open");
+  });
+
+  /* ---------- export and import ---------- */
+
+  function bundle() {
+    var np = domains.reduce(function (a, D) { return a + D.projects.length; }, 0);
+    return JSON.stringify({
+      schema: SCHEMA, app: "terramap",
+      exported_at: new Date().toISOString(),
+      domain_count: domains.length, project_count: np, domains: domains
+    }, null, 2);
+  }
+
+  document.getElementById("exportBtn").addEventListener("click", function () {
+    var stamp = new Date().toISOString().slice(0, 10);
+    var blob = new Blob([bundle()], { type: "application/json" });
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "terramap-" + stamp + ".json";
+    document.body.appendChild(a); a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  });
+
+  document.getElementById("copyBtn").addEventListener("click", function () {
+    var t = bundle();
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(t).then(
+        function () { flash("Copied " + domains.length + " domain(s) to the clipboard."); },
+        function () { window.prompt("Copy this:", t); });
+    } else { window.prompt("Copy this:", t); }
+  });
+
+  document.getElementById("importBtn").addEventListener("click", function () { fileInput.click(); });
+
+  fileInput.addEventListener("change", function () {
+    var f = fileInput.files && fileInput.files[0];
+    if (!f) return;
+    var reader = new FileReader();
+    reader.onload = function () {
+      var incoming;
+      try {
+        var p = JSON.parse(reader.result);
+        incoming = Array.isArray(p) ? p : p.domains;
+      } catch (e) { alert("That file could not be read as JSON."); return; }
+      if (!Array.isArray(incoming)) { alert("No domains found in that file."); return; }
+
+      var nD = 0, nP = 0;
+      incoming.forEach(function (inD) {
+        if (!inD || typeof inD.name !== "string") return;
+        var t = domById(inD.id);
+        if (!t) {
+          var w = inD.w || 1, h = inD.h || 1;
+          var spot = fits(inD.col, inD.row, w, h) ? { col: inD.col, row: inD.row } : firstFree(w, h);
+          if (!spot) return;
+          t = { id: inD.id || newId("d"), name: inD.name, col: spot.col, row: spot.row,
+                w: w, h: h, opened_at: inD.opened_at || 0, projects: [] };
+          domains.push(t); nD++;
+        }
+        var have = {};
+        t.projects.forEach(function (x) { have[x.id] = true; });
+        (inD.projects || []).forEach(function (x) {
+          if (!x || typeof x.name !== "string") return;
+          var id = x.id || newId("p");
+          if (have[id]) return;
+          var rec = { id: id, name: x.name, done: x.done || 0,
+                      created_at: x.created_at || Date.now() };
+          if (x.target) rec.target = x.target;
+          t.projects.push(rec); have[id] = true; nP++;
+        });
+      });
+      save(); render();
+      alert("Added " + nD + " domain(s) and " + nP + " project(s).");
+    };
+    reader.readAsText(f);
+    fileInput.value = "";
+  });
+
+  /* ---------- boot ---------- */
+
+  if (navigator.storage && navigator.storage.persist) {
+    navigator.storage.persisted().then(function (ok) { if (!ok) navigator.storage.persist(); });
+  }
+
+  load();
+  domains.forEach(function (D) { D.projects = D.projects || []; });
+
+  try {
+    var q = new URLSearchParams(location.search);
+    var shared = [q.get("title"), q.get("text")].filter(Boolean).join("\n").trim();
+    if (shared) { box.value = shared; send.disabled = false; history.replaceState(null, "", location.pathname); }
+  } catch (e) {}
+
+  render();
+  window.addEventListener("resize", function () { if (view === "map") renderGrid(); });
+
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", function () {
+      navigator.serviceWorker.register("sw.js").catch(function () {});
+    });
+  }
+})();
+</script>
+</body>
+</html>
